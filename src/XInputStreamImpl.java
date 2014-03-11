@@ -155,4 +155,8 @@ public class XInputStreamImpl extends InputStream implements XInputStream {
         }
         return len;
     }
+
+    public int getHead() {
+        return head;
+    }
 }

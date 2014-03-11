@@ -60,7 +60,7 @@ public class BinLogReader {
     }
 
     public static void main(String args[]) throws IOException, InterruptedException {
-        String binPath = "C:\\wamp\\mysql\\data\\mysqlbin-log.000001";
+        String binPath = "C:\\wamp\\mysql\\data\\mysqlbin-log.000002";
         BinLogReader br = new BinLogReader(binPath);
         final ArrayBlockingQueue queue = new ArrayBlockingQueue(1000);
         new Thread(new Runnable() {
@@ -78,13 +78,17 @@ public class BinLogReader {
             }
         }).start();
         if (br.isBinLogFile()) {
-            br.is.skip(98-4);
             while (true) {
                 Thread.sleep(1000);
                 while (br.is.hasMore()) {
                     CommonHeader header = br.parseHeader();
-                    QueryEvent event = br.parseEvent();
-                    queue.put(event);
+                    if (header.type == 2) {
+                        QueryEvent event = br.parseEvent();
+                        queue.put(event);
+                    } else {
+                        br.is.skip(header.nextPosition - br.is.getHead());
+                        br.is.setReadLimit(0);
+                    }
                 }
             }
         }
