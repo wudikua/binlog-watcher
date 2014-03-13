@@ -68,7 +68,7 @@ public class XInputStreamImpl extends InputStream implements XInputStream {
         while(true) {
             final int v = this.read();
             bos.write((byte) v);
-            if(v == 0) break;
+            if(v == 0||this.available()==0) break;
         }
         return new String(bos.toByteArray());
     }

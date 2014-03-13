@@ -110,23 +110,33 @@ public class BinLogReader {
         }
     }
 
-    public static void slaveWatcher() throws IOException {
-        BinLogReader br = new BinLogReader("127.0.0.1", 3306, "root", "mjak123");
+    public static byte[] concat(byte[] data1, byte[] data2) {
+        final byte r[] = new byte[data1.length + data2.length];
+        System.arraycopy(data1, 0, r, 0, data1.length);
+        System.arraycopy(data2, 0, r, data1.length, data2.length);
+        return r;
+    }
+
+    public boolean connectMysql() throws IOException {
         //读mysql的 greeting pocket
-        int length = br.is.readInt(3);
-        int sequence = br.is.readInt(1);
-        int protocol = br.is.readInt(1);
-        String version = br.is.readNullTerminatedString();
-        long threadId = br.is.readLong(4);
+        int length = this.is.readInt(3);
+        int sequence = this.is.readInt(1);
+        int protocol = this.is.readInt(1);
+        String version = this.is.readNullTerminatedString();
+        long threadId = this.is.readLong(4);
+        byte[] salt1 = new byte[8];
+        byte[] salt2 = new byte[12];
         byte[] salt = new byte[20];
-        br.is.read(salt, 0, 8);
-        br.is.skip(1);
-        int serverCapabilities = br.is.readInt(2);
-        int charset = br.is.readInt(1);
-        int status = br.is.readInt(2);
-        br.is.skip(13);
-        br.is.read(salt, 0, 12);
-        br.is.skip(1);
+        this.is.read(salt1, 0, 8);
+        this.is.skip(1);
+        int serverCapabilities = this.is.readInt(2);
+        int charset = this.is.readInt(1);
+        int status = this.is.readInt(2);
+        this.is.skip(13);
+        this.is.read(salt2, 0, 12);
+        System.arraycopy(salt1, 0, salt, 0, salt1.length);
+        System.arraycopy(salt2, 0, salt, salt1.length, salt2.length);
+        this.is.skip(1);
 
         //写login packet
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
@@ -135,13 +145,50 @@ public class BinLogReader {
         tos.writeInt(0, 4);
         tos.writeInt(charset, 1);
         tos.writeBytes(0, 23);
-        tos.write("root".getBytes(), 0, "root".getBytes().length);
+        tos.write("root".getBytes(), 0, this.userName.getBytes().length);
         tos.write("\0".getBytes(),0,1);
         tos.writeInt(20, 1);
-        byte[] byte1 = CodecUtils.sha("mjak123".getBytes());
-        byte[] byte2 = CodecUtils.sha(salt);
-
+        //加密算法 SHA1(password) XOR SHA1("20-bytes random data from server" <concat> SHA1(SHA1(password)))
+        byte[] byte1 = CodecUtils.sha(this.password.getBytes());
+        byte[] byte2 = CodecUtils.sha((concat(salt, CodecUtils.sha(byte1))));
         tos.writeBytes(CodecUtils.xor(byte1, byte2));
+        tos.flush();
+        byte[] body = bos.toByteArray();
+        this.os.writeInt(body.length, 3);
+        this.os.writeInt(sequence + 1, 1);
+        this.os.writeBytes(body);
+        this.os.flush();
+
+        //读mysql auth result
+        int authLength = this.is.readInt(3);
+        int authSeq = this.is.readInt(1);
+        int ok = this.is.readInt(1);
+        if (ok == 0 && authSeq == sequence + 2) {
+            this.is.skip(authLength-1);
+            System.out.println("与MYSQL建立连接验证成功");
+            return true;
+        } else {
+            int errorCode = this.is.readInt(2);
+            this.is.skip(6);
+            String errorMsg = this.is.readNullTerminatedString();
+            System.out.println(errorCode + " : " +errorMsg);
+            return false;
+        }
+    }
+
+    public boolean slaveRegister() throws IOException {
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        XOutputStreamImpl tos = new XOutputStreamImpl(bos);
+        this.os.writeInt(0x12, 1);
+        this.os.writeLong(4, 4);
+        return true;
+    }
+
+    public static void slaveWatcher() throws IOException {
+        BinLogReader br = new BinLogReader("127.0.0.1", 3306, "root", "mjak123");
+        if (br.connectMysql()) {
+            br.slaveRegister();
+        }
     }
 
     public static void main(String args[]) throws IOException, InterruptedException {

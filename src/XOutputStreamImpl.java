@@ -40,7 +40,7 @@ public class XOutputStreamImpl extends BufferedOutputStream implements XOutputSt
     }
 
     public void writeBytes(byte[] value) throws IOException {
-        super.write(value);
+        super.write(value, 0, value.length);
     }
 
 }
