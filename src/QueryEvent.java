@@ -18,9 +18,9 @@ public class QueryEvent {
 
     public int statusVariablesLength;
 
-    public StringColumn databaseName;
+    public String databaseName;
 
-    public StringColumn sql;
+    public String sql;
 
     @Override
     public String toString() {

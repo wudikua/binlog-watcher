@@ -63,14 +63,14 @@ public class XInputStreamImpl extends InputStream implements XInputStream {
         return r;
     }
 
-    public StringColumn readNullTerminatedString() throws IOException {
+    public String readNullTerminatedString() throws IOException {
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
         while(true) {
             final int v = this.read();
             bos.write((byte) v);
             if(v == 0) break;
         }
-        return new StringColumn(bos.toByteArray());
+        return new String(bos.toByteArray());
     }
 
     @Override

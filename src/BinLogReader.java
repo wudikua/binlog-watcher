@@ -1,7 +1,6 @@
 import java.io.*;
-import java.text.SimpleDateFormat;
+import java.net.Socket;
 import java.util.Arrays;
-import java.util.Date;
 import java.util.concurrent.ArrayBlockingQueue;
 
 /**
@@ -17,9 +16,27 @@ public class BinLogReader {
 
     public XInputStreamImpl is;
 
+    public XOutputStreamImpl os;
+
+    public Socket socket;
+
+    public String userName;
+
+    public String password;
+
     public BinLogReader(String binPath) throws FileNotFoundException {
         this.binPath = binPath;
         this.is = new XInputStreamImpl(new FileInputStream((new File(this.binPath))));
+    }
+
+    public BinLogReader(String host, int port, String userName, String password) throws IOException {
+        this.socket = new Socket(host, port);
+        this.socket.setKeepAlive(true);
+        this.socket.setTcpNoDelay(true);
+        this.is = new XInputStreamImpl(this.socket.getInputStream());
+        this.os = new XOutputStreamImpl(this.socket.getOutputStream(), 1024);
+        this.userName = userName;
+        this.password = password;
     }
 
     public boolean isBinLogFile() throws IOException {
@@ -54,13 +71,12 @@ public class BinLogReader {
         event.statusVariablesLength = is.readInt(2);
         is.readBytes(event.statusVariablesLength);
         event.databaseName = is.readNullTerminatedString();
-        event.sql = new StringColumn(is.readBytes(is.available()));
+        event.sql = new String(is.readBytes(is.available()));
         is.setReadLimit(0);
         return event;
     }
 
-    public static void main(String args[]) throws IOException, InterruptedException {
-        String binPath = "C:\\wamp\\mysql\\data\\mysqlbin-log.000002";
+    public static void fileWatcher(String binPath) throws IOException, InterruptedException {
         BinLogReader br = new BinLogReader(binPath);
         final ArrayBlockingQueue queue = new ArrayBlockingQueue(1000);
         new Thread(new Runnable() {
@@ -92,6 +108,45 @@ public class BinLogReader {
                 }
             }
         }
+    }
+
+    public static void slaveWatcher() throws IOException {
+        BinLogReader br = new BinLogReader("127.0.0.1", 3306, "root", "mjak123");
+        //读mysql的 greeting pocket
+        int length = br.is.readInt(3);
+        int sequence = br.is.readInt(1);
+        int protocol = br.is.readInt(1);
+        String version = br.is.readNullTerminatedString();
+        long threadId = br.is.readLong(4);
+        byte[] salt = new byte[20];
+        br.is.read(salt, 0, 8);
+        br.is.skip(1);
+        int serverCapabilities = br.is.readInt(2);
+        int charset = br.is.readInt(1);
+        int status = br.is.readInt(2);
+        br.is.skip(13);
+        br.is.read(salt, 0, 12);
+        br.is.skip(1);
+
+        //写login packet
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        XOutputStreamImpl tos = new XOutputStreamImpl(bos);
+        tos.writeInt(33284, 4);
+        tos.writeInt(0, 4);
+        tos.writeInt(charset, 1);
+        tos.writeBytes(0, 23);
+        tos.write("root".getBytes(), 0, "root".getBytes().length);
+        tos.write("\0".getBytes(),0,1);
+        tos.writeInt(20, 1);
+        byte[] byte1 = CodecUtils.sha("mjak123".getBytes());
+        byte[] byte2 = CodecUtils.sha(salt);
+
+        tos.writeBytes(CodecUtils.xor(byte1, byte2));
+    }
+
+    public static void main(String args[]) throws IOException, InterruptedException {
+//        fileWatcher("C:\\wamp\\mysql\\data\\mysqlbin-log.000001");
+          slaveWatcher();
     }
 
 }
